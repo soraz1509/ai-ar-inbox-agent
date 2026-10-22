@@ -54,6 +54,21 @@ services:
     ports:
       - "127.0.0.1:8001:8000"
 
+  s4-ar-mcp:
+    build: ./s4-ar-mcp
+    restart: unless-stopped
+    depends_on:
+      - s4-ar-mock
+    environment:
+      S4_MODE: ${S4_MODE}
+      MOCK_URL: http://s4-ar-mock:8000
+      SAP_SANDBOX_BASE: ${SAP_SANDBOX_BASE}
+      SAP_SANDBOX_APIKEY: ${SAP_SANDBOX_APIKEY}
+      MCP_BEARER_TOKEN: ${MCP_BEARER_TOKEN}
+      TZ: Europe/Berlin
+    ports:
+      - "127.0.0.1:8002:8000"
+
 volumes:
   pgdata:
   n8n_data:
