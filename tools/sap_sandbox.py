@@ -19,19 +19,21 @@ def load_env():
 
 
 ENV = load_env()
-URL = (ENV["SAP_SANDBOX_BASE"].rstrip("/")
-       + "/sap/opu/odata/sap/API_OPLACCTGDOCITEMCUBE_SRV/A_OperationalAcctgDocItemCube")
+BASE = ENV["SAP_SANDBOX_BASE"].rstrip("/")
+ITEMS_PATH = "/sap/opu/odata/sap/API_OPLACCTGDOCITEMCUBE_SRV/A_OperationalAcctgDocItemCube"
 FIELDS = ["CompanyCode", "FiscalYear", "AccountingDocument", "AccountingDocumentItem",
-          "Customer", "CustomerName", "AccountingDocumentType", "PostingDate", "NetDueDate",
+          "Customer", "CustomerName", "FinancialAccountType", "AccountingDocumentType", "PostingDate", "NetDueDate",
           "AmountInTransactionCurrency", "TransactionCurrency", "DebitCreditCode",
           "DocumentReferenceID", "AssignmentReference", "BillingDocument", "SalesDocument",
           "PaymentTerms", "CashDiscount1Percent", "CashDiscount1DueDate", "DunningLevel", "IsCleared"]
 CLEARING_FIELDS = ["ClearingDate", "ClearingAccountingDocument"]
 
 
-def get(params):
+def get(params, path=ITEMS_PATH, fail=True):
+    """GET an OData V2 resource and return its 'd' payload (None on HTTP error if fail=False)."""
     query = "&".join(f"{k}={urllib.parse.quote(v, safe=',' + chr(39))}" for k, v in params.items())
-    req = urllib.request.Request(f"{URL}?{query}", headers={
+    url = BASE + path + (f"?{query}" if query else "")
+    req = urllib.request.Request(url, headers={
         "APIKey": ENV["SAP_SANDBOX_APIKEY"], "Accept": "application/json", "Accept-Encoding": "gzip"})
     try:
         with urllib.request.urlopen(req, timeout=90) as r:
@@ -44,8 +46,10 @@ def get(params):
             raw = gzip.decompress(raw)
         except OSError:
             pass
-        print("HTTP", e.code, raw[:800].decode("utf-8", "replace"))
-        sys.exit(1)
+        print("HTTP", e.code, path, raw[:300].decode("utf-8", "replace"))
+        if fail:
+            sys.exit(1)
+        return None
     return json.loads(body)["d"]
 
 

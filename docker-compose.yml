@@ -40,6 +40,21 @@ services:
     volumes:
       - n8n_data:/home/node/.n8n
 
+  s4-ar-mock:
+    build: ./s4-ar-mock
+    restart: unless-stopped
+    environment:
+      EXECUTOR_KEY: ${EXECUTOR_KEY}
+      DB_PATH: /data/mock.db
+      TZ: Europe/Berlin
+    volumes:
+      - mock_data:/data
+      - ./s4-ar-mock/snapshot:/app/snapshot:ro
+      - ./s4-ar-mock/seed:/app/seed:ro
+    ports:
+      - "127.0.0.1:8001:8000"
+
 volumes:
   pgdata:
   n8n_data:
+  mock_data:

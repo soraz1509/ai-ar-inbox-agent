@@ -1,0 +1,26 @@
+{
+  "_note": "Seeded demo items, NOT from the SAP sandbox. Scenario 3: customer pays quoting only its purchase order numbers, which S/4 holds in the assignment field.",
+  "items": [
+    {"CompanyCode": "1010", "FiscalYear": "2026", "AccountingDocument": "1800990001", "AccountingDocumentItem": "1",
+     "Customer": "10100001", "CustomerName": "Hypercom AG", "AccountingDocumentType": "DR",
+     "PostingDate": "2026-09-15", "NetDueDate": "2026-10-15",
+     "AmountInTransactionCurrency": "1190.00", "TransactionCurrency": "EUR", "DebitCreditCode": "S",
+     "DocumentReferenceID": "0090990001", "AssignmentReference": "4500017311", "BillingDocument": "90990001",
+     "SalesDocument": "", "PaymentTerms": "NT30", "CashDiscount1Percent": "0.000", "CashDiscount1DueDate": null,
+     "DunningLevel": "0", "IsCleared": false},
+    {"CompanyCode": "1010", "FiscalYear": "2026", "AccountingDocument": "1800990002", "AccountingDocumentItem": "1",
+     "Customer": "10100001", "CustomerName": "Hypercom AG", "AccountingDocumentType": "DR",
+     "PostingDate": "2026-09-18", "NetDueDate": "2026-10-18",
+     "AmountInTransactionCurrency": "2380.00", "TransactionCurrency": "EUR", "DebitCreditCode": "S",
+     "DocumentReferenceID": "0090990002", "AssignmentReference": "4500017342", "BillingDocument": "90990002",
+     "SalesDocument": "", "PaymentTerms": "NT30", "CashDiscount1Percent": "0.000", "CashDiscount1DueDate": null,
+     "DunningLevel": "0", "IsCleared": false},
+    {"CompanyCode": "1010", "FiscalYear": "2026", "AccountingDocument": "1800990003", "AccountingDocumentItem": "1",
+     "Customer": "10100001", "CustomerName": "Hypercom AG", "AccountingDocumentType": "DR",
+     "PostingDate": "2026-09-22", "NetDueDate": "2026-10-22",
+     "AmountInTransactionCurrency": "595.00", "TransactionCurrency": "EUR", "DebitCreditCode": "S",
+     "DocumentReferenceID": "0090990003", "AssignmentReference": "4500017359", "BillingDocument": "90990003",
+     "SalesDocument": "", "PaymentTerms": "NT30", "CashDiscount1Percent": "0.000", "CashDiscount1DueDate": null,
+     "DunningLevel": "0", "IsCleared": false}
+  ]
+}
