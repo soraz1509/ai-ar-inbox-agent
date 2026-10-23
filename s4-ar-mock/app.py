@@ -230,6 +230,14 @@ def check_items(d: DraftBase):
 
 
 def create(kind, draft):
+    # Idempotency: one draft per kind and case_ref (safe agent retries).
+    if draft.case_ref:
+        with db() as con:
+            r = con.execute("SELECT id, status FROM drafts WHERE kind = ? AND status != 'REJECTED' "
+                            "AND json_extract(payload, '$.case_ref') = ? ORDER BY created_at LIMIT 1",
+                            (kind, draft.case_ref)).fetchone()
+        if r:
+            return {"draft_id": r["id"], "kind": kind, "status": r["status"], "idempotent_replay": True}
     check_items(draft)
     draft_id = f"DRF-{uuid.uuid4().hex[:10].upper()}"
     with db() as con:
@@ -312,3 +320,13 @@ def execute(draft_id: str, decision: Decision, x_executor_key: Optional[str] = H
 @app.post("/drafts/{draft_id}/reject")
 def reject_draft(draft_id: str, decision: Decision, x_executor_key: Optional[str] = Header(None)):
     return decide(draft_id, "REJECTED", decision, x_executor_key)
+
+
+@app.post("/mock/reset-drafts")
+def reset_drafts(x_executor_key: Optional[str] = Header(None)):
+    """Test utility: delete all drafts. Requires the executor key."""
+    if not EXECUTOR_KEY or not secrets.compare_digest(x_executor_key or "", EXECUTOR_KEY):
+        raise HTTPException(403, "Executor key required")
+    with db() as con:
+        n = con.execute("DELETE FROM drafts").rowcount
+    return {"deleted": n}
