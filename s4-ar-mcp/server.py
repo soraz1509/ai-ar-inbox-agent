@@ -321,6 +321,25 @@ def draft_promise_to_pay(customer: str, company_code: str, currency: str, promis
         "items": [i.model_dump() for i in items], "note": note, "case_ref": case_ref})
 
 
+# ---------- knowledge base (RAG) ----------
+from kb import search as kb_search  # noqa: E402
+
+
+@mcp.tool(annotations=READ)
+def search_ar_policy(question: str, customer: Optional[str] = None, top_k: int = 4) -> dict:
+    """Search the AR policy knowledge base: tolerances, cash discount, deductions, promises to pay,
+    approval rules, dispute reason codes and customer-specific agreements. Pass the SAP customer
+    number to include that customer's agreements; without it only general policy is searched.
+    Cite the source_id of every passage you rely on. If nothing relevant comes back, say so and
+    escalate - never invent policy."""
+    try:
+        passages = kb_search(question, customer=customer, k=max(1, min(top_k, 8)))
+    except Exception as e:  # knowledge base must never break the agent run
+        log.warning("search_ar_policy failed: %s", e)
+        return {"error": f"knowledge base unavailable: {e}"}
+    return {"question": question, "customer": customer, "passages": passages}
+
+
 # ---------- HTTP app with bearer-token protection ----------
 class BearerAuth:
     """Rejects every request without the shared bearer token, except GET /health."""

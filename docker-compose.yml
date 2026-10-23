@@ -58,14 +58,25 @@ services:
     build: ./s4-ar-mcp
     restart: unless-stopped
     depends_on:
-      - s4-ar-mock
+      s4-ar-mock:
+        condition: service_started
+      postgres:
+        condition: service_healthy
     environment:
       S4_MODE: ${S4_MODE}
       MOCK_URL: http://s4-ar-mock:8000
       SAP_SANDBOX_BASE: ${SAP_SANDBOX_BASE}
       SAP_SANDBOX_APIKEY: ${SAP_SANDBOX_APIKEY}
       MCP_BEARER_TOKEN: ${MCP_BEARER_TOKEN}
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+      GEMINI_EMBED_MODEL: ${GEMINI_EMBED_MODEL}
+      POSTGRES_HOST: postgres
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       TZ: Europe/Berlin
+    volumes:
+      - ./knowledge:/app/knowledge:ro
     ports:
       - "127.0.0.1:8002:8000"
 
