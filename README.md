@@ -28,7 +28,7 @@ items, creating dispute cases and answering. That is the work this agent takes o
 
 All runs: real Gmail in and out, live SAP sandbox reads, human approval by email.
 
-| # | Email | Agent outcome | Flags | Created in S/4 after approval |
+| # | Email | Agent outcome | Flags | Created in the S/4 mock after approval |
 |---|---|---|---|---|
 | 1 | Remittance quoting payment-advice numbers (EN) | Customer **CASH_APP** identified (a second account has the same name), exact match | - | Payment advice |
 | 2 | Remittance with 2 % "Aktionsrabatt" deduction (DE) | Agreement found via RAG: promo claim number required but missing, so dispute case **PROMO** instead of acceptance; German reply asks for the claim number | FOUR_EYES (> EUR 100k) | Payment advice 127,135.40 + dispute case 2,594.60 |
