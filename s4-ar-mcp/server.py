@@ -67,12 +67,14 @@ def iso(v):
     return d.isoformat() if d else None
 
 
-def _paged(base, headers, flt, fields, cap=5000, page=500):
+def _paged(base, headers, flt, fields, cap=5000, page=500, orderby=None):
     rows, skip = [], 0
     with httpx.Client(timeout=60) as client:
         while True:
             params = {"$filter": flt, "$select": ",".join(fields), "$top": str(page),
                       "$skip": str(skip), "$inlinecount": "allpages"}
+            if orderby:
+                params["$orderby"] = orderby
             r = client.get(build_url(base, ITEMS_PATH, params), headers=headers)
             r.raise_for_status()
             d = r.json()["d"]
@@ -86,20 +88,20 @@ def _paged(base, headers, flt, fields, cap=5000, page=500):
 _cache: dict = {}
 
 
-def read_items(flt, fields, cap=5000):
-    key = (flt, tuple(fields), cap)
+def read_items(flt, fields, cap=5000, orderby=None):
+    key = (flt, tuple(fields), cap, orderby)
     hit = _cache.get(key)
     if hit and time.time() - hit[0] < CACHE_SECONDS:
         return hit[1], hit[2]
     if MODE == "sandbox":
         try:
-            rows = [{**r, "source": "sandbox"} for r in _paged(SANDBOX_BASE, SANDBOX_HEADERS, flt, fields, cap)]
+            rows = [{**r, "source": "sandbox"} for r in _paged(SANDBOX_BASE, SANDBOX_HEADERS, flt, fields, cap, orderby=orderby)]
             src = "sandbox"
         except (httpx.HTTPError, KeyError, ValueError) as e:
             log.warning("sandbox read failed (%s) - falling back to snapshot mock", e)
-            rows, src = _paged(MOCK_URL, {}, flt, fields, cap), "mock_fallback"
+            rows, src = _paged(MOCK_URL, {}, flt, fields, cap, orderby=orderby), "mock_fallback"
     else:
-        rows, src = _paged(MOCK_URL, {}, flt, fields, cap), "mock"
+        rows, src = _paged(MOCK_URL, {}, flt, fields, cap, orderby=orderby), "mock"
     _cache[key] = (time.time(), rows, src)
     return rows, src
 
@@ -141,7 +143,7 @@ def _name(v) -> str:
 
 # ---------- read tools ----------
 @mcp.tool(annotations=READ)
-def find_customer(query: str, references: Optional[list[str]] = None, company_code: str = "1010") -> dict:
+def find_customer(query: str, references: list[str] = [], company_code: str = "1010") -> dict:
     """Find SAP customer accounts by name or customer number as written in an email or signature.
     Several accounts can share a name. Pass the references quoted in the email (invoice, PO or
     payment-advice numbers) to rank candidates by how many of their open items carry them.
@@ -174,7 +176,7 @@ def find_customer(query: str, references: Optional[list[str]] = None, company_co
 
 
 @mcp.tool(annotations=READ)
-def get_open_items(customer: str, company_code: str, currency: Optional[str] = None, limit: int = 25) -> dict:
+def get_open_items(customer: str, company_code: str, currency: str = "", limit: int = 25) -> dict:
     """Open receivables of ONE customer in ONE company code (like FBL5N open items): count, totals,
     overdue count and the oldest `limit` items. To find specific documents use lookup_reference."""
     rows, src = open_rows(customer, company_code)
@@ -216,7 +218,8 @@ def lookup_reference(customer: str, company_code: str, reference: str) -> dict:
 def get_payment_behaviour(customer: str, company_code: str) -> dict:
     """Payment history from cleared items (days paid after net due date, share paid late) plus the
     current open and overdue position. Context for disputes, promises to pay and collections."""
-    cleared, src = read_items(customer_filter(customer, company_code, True), FIELDS + CLEARING_FIELDS, cap=1000)
+    cleared, src = read_items(customer_filter(customer, company_code, True), FIELDS + CLEARING_FIELDS, cap=1000,
+                             orderby="ClearingDate desc")
     late = [(to_date(r["ClearingDate"]) - to_date(r["NetDueDate"])).days for r in cleared
             if r.get("DebitCreditCode") == "S" and r.get("ClearingDate") and r.get("NetDueDate")]
     open_items, _ = open_rows(customer, company_code)
@@ -224,7 +227,7 @@ def get_payment_behaviour(customer: str, company_code: str) -> dict:
            "cleared_items_analysed": len(cleared), "invoices_with_dates": len(late),
            "open_item_count": len(open_items),
            "overdue_open_items": sum(is_overdue(r, date.today()) for r in open_items),
-           "note": "Based on up to 1000 cleared items - a sample, not the full history."}
+           "note": "Based on the up to 1000 most recently cleared items (newest first when read from SAP)."}
     if late:
         out.update(avg_days_after_due=round(mean(late), 1), median_days_after_due=median(late),
                    share_paid_late=round(sum(d > 0 for d in late) / len(late), 2), max_days_late=max(late))
@@ -232,20 +235,20 @@ def get_payment_behaviour(customer: str, company_code: str) -> dict:
 
 
 class Deduction(BaseModel):
-    amount: float = Field(gt=0, description="Amount the customer deducted")
+    amount: float = Field(description="Amount the customer deducted")
     reason_text: str = Field(description="The customer's own words for the deduction")
 
 
 @mcp.tool(annotations=READ)
 def propose_clearing(customer: str, company_code: str, payment_amount: float, currency: str,
-                     value_date: Optional[str] = None, references: Optional[list[str]] = None,
-                     deductions: Optional[list[Deduction]] = None) -> dict:
+                     value_date: str = "", references: list[str] = [],
+                     deductions: list[Deduction] = []) -> dict:
     """Deterministic matching of a payment against the customer's open items - no AI involved.
     ALWAYS use this for any amount question; never add up amounts yourself. Returns status
     (MATCHED, MATCHED_WITH_DIFFERENCE, AMBIGUOUS, NO_MATCH), the matched items, the difference and
     its type (e.g. SHORT_PAYMENT, UNEARNED_CASH_DISCOUNT, WITHIN_TOLERANCE) and an explanation."""
     rows, src = open_rows(customer, company_code)
-    result = match_payment(rows, payment_amount, currency, value_date=value_date,
+    result = match_payment(rows, payment_amount, currency, value_date=value_date or None,
                            references=references or [],
                            deductions=[d.model_dump() for d in (deductions or [])])
     return {"customer": customer, "company_code": company_code, "data_source": src, **result}
@@ -267,7 +270,13 @@ class ItemRef(BaseModel):
     fiscal_year: str
     accounting_document: str
     accounting_document_item: str = "1"
-    amount: Optional[float] = Field(None, description="Amount applied / disputed / promised for this item")
+    amount: float = Field(0, description="Amount applied / disputed / promised for this item (0 = not specified)")
+
+
+def _item(i) -> dict:
+    d = i.model_dump()
+    d["amount"] = d["amount"] or None
+    return d
 
 
 def _draft(kind, payload) -> dict:
@@ -285,40 +294,40 @@ def _draft(kind, payload) -> dict:
 
 @mcp.tool(annotations=DRAFT)
 def draft_payment_advice(customer: str, company_code: str, currency: str, payment_amount: float,
-                         items: list[ItemRef], value_date: Optional[str] = None,
-                         note: str = "", case_ref: Optional[str] = None) -> dict:
+                         items: list[ItemRef], value_date: str = "",
+                         note: str = "", case_ref: str = "") -> dict:
     """Create a payment advice DRAFT listing which open items a payment settles, with the amount
     applied per item. Use document keys and amounts exactly as returned by propose_clearing.
     A human must approve it before anything reaches SAP."""
     return _draft("payment-advice", {
         "company_code": company_code, "customer": customer, "currency": currency,
-        "payment_amount": payment_amount, "value_date": value_date,
-        "items": [i.model_dump() for i in items], "note": note, "case_ref": case_ref})
+        "payment_amount": payment_amount, "value_date": value_date or None,
+        "items": [_item(i) for i in items], "note": note, "case_ref": case_ref or None})
 
 
 @mcp.tool(annotations=DRAFT)
 def draft_dispute_case(customer: str, company_code: str, currency: str, disputed_amount: float,
                        reason_code: str, title: str, items: list[ItemRef],
-                       note: str = "", case_ref: Optional[str] = None) -> dict:
+                       note: str = "", case_ref: str = "") -> dict:
     """Create a dispute case DRAFT for a short payment or deduction (FSCM Dispute Management).
     reason_code must come from the AR policy dispute catalogue. Put the customer's explanation and
     the policy basis in note. A human must approve it."""
     return _draft("dispute-case", {
         "company_code": company_code, "customer": customer, "currency": currency,
         "disputed_amount": disputed_amount, "reason_code": reason_code, "title": title,
-        "items": [i.model_dump() for i in items], "note": note, "case_ref": case_ref})
+        "items": [_item(i) for i in items], "note": note, "case_ref": case_ref or None})
 
 
 @mcp.tool(annotations=DRAFT)
 def draft_promise_to_pay(customer: str, company_code: str, currency: str, promised_amount: float,
                          promised_date: str, items: list[ItemRef],
-                         note: str = "", case_ref: Optional[str] = None) -> dict:
+                         note: str = "", case_ref: str = "") -> dict:
     """Create a promise-to-pay DRAFT (FSCM Collections Management) for the invoices the customer
     promised to pay on promised_date (YYYY-MM-DD). A human must approve it."""
     return _draft("promise-to-pay", {
         "company_code": company_code, "customer": customer, "currency": currency,
         "promised_amount": promised_amount, "promised_date": promised_date,
-        "items": [i.model_dump() for i in items], "note": note, "case_ref": case_ref})
+        "items": [_item(i) for i in items], "note": note, "case_ref": case_ref or None})
 
 
 # ---------- knowledge base (RAG) ----------
@@ -326,14 +335,14 @@ from kb import search as kb_search  # noqa: E402
 
 
 @mcp.tool(annotations=READ)
-def search_ar_policy(question: str, customer: Optional[str] = None, top_k: int = 4) -> dict:
+def search_ar_policy(question: str, customer: str = "", top_k: int = 4) -> dict:
     """Search the AR policy knowledge base: tolerances, cash discount, deductions, promises to pay,
     approval rules, dispute reason codes and customer-specific agreements. Pass the SAP customer
     number to include that customer's agreements; without it only general policy is searched.
     Cite the source_id of every passage you rely on. If nothing relevant comes back, say so and
     escalate - never invent policy."""
     try:
-        passages = kb_search(question, customer=customer, k=max(1, min(top_k, 8)))
+        passages = kb_search(question, customer=customer or None, k=max(1, min(top_k, 8)))
     except Exception as e:  # knowledge base must never break the agent run
         log.warning("search_ar_policy failed: %s", e)
         return {"error": f"knowledge base unavailable: {e}"}
@@ -357,6 +366,28 @@ class BearerAuth:
                 await JSONResponse({"error": "unauthorized"}, status_code=401)(scope, receive, send)
                 return
         await self.app(scope, receive, send)
+
+
+# ---------- Gemini compatibility: inline $ref / $defs in advertised tool schemas ----------
+def _inline_refs(schema: dict) -> dict:
+    """Gemini function calling does not support JSON Schema $ref/$defs: replace refs by their definitions."""
+    defs = schema.get("$defs", {})
+
+    def walk(node):
+        if isinstance(node, dict):
+            if "$ref" in node:
+                target = walk(defs[node["$ref"].split("/")[-1]])
+                return {**target, **{k: walk(v) for k, v in node.items() if k != "$ref"}}
+            return {k: walk(v) for k, v in node.items() if k != "$defs"}
+        if isinstance(node, list):
+            return [walk(v) for v in node]
+        return node
+
+    return walk(schema)
+
+
+for _tool in mcp._tool_manager.list_tools():
+    _tool.parameters = _inline_refs(_tool.parameters)
 
 
 if __name__ == "__main__":
