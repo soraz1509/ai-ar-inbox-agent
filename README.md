@@ -188,4 +188,4 @@ model tokens across 8-12 calls, so the model cost per email is small on a paid F
 licence cost under its fair-code licence (check the terms for your use).
 
 ---
-Author: Sora Zhang - SAP FICO consultant and solution architect. All business data is SAP sandbox demo data or synthetic.
+Author: Sora Zhang - SAP FICO consultant. All business data is SAP sandbox demo data or synthetic.
